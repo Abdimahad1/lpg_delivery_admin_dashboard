@@ -1,0 +1,76 @@
+/* Global reset to avoid side spacing */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+  font-family: sans-serif;
+}
+
+/* Layout wrapper (make sure your layout uses this class) */
+.layout-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Fixed sidebar */
+.admin-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 250px;
+  height: 100vh;
+  background-color: #1e293b; /* Matches dark blue-gray */
+  color: white;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  z-index: 1000; /* Ensures it stays above other content */
+}
+
+/* Sidebar heading */
+.admin-sidebar h2 {
+  font-size: 20px;
+  font-weight: bold;
+  margin-bottom: 20px;
+}
+
+/* Sidebar navigation */
+.admin-sidebar ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex-grow: 1;
+}
+
+.admin-sidebar li {
+  margin-bottom: 15px;
+}
+
+.admin-sidebar a {
+  color: white;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.admin-sidebar a:hover {
+  background-color: #334155;
+  color: #ffffff;
+}
+
+/* Logout button sticks to bottom */
+.admin-sidebar .logout {
+  margin-top: auto;
+}
+

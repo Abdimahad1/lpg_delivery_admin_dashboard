@@ -1,0 +1,23 @@
+/* Remove all spacing from the base elements */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow-x: hidden; /* Optional: Prevents horizontal scroll */
+}
+
+/* Ensure the root layout container fills the screen */
+.layout-container {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+}
+

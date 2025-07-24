@@ -1,0 +1,205 @@
+/* Dashboard.css */
+/* Parent container wrapping sidebar and main content */
+.dashboard-layout-container {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
+  
+  .dashboard-main-wrapper {
+    flex: 1;
+    padding: 0;
+    background-color: #f5f6fa;
+    height: 100vh;
+    overflow-y: auto;
+    box-sizing: border-box;
+
+    margin-left: 250px; /* ✅ Offset fixed sidebar */
+}
+
+  
+  
+.dashboard-main-content {
+    padding: 30px;
+    min-height: 100vh;
+    background-color: #f5f6fa;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    width: 100%;
+}
+  
+/* Title */
+.dashboard-main-title {
+    font-size: 32px;
+    margin-bottom: 20px;
+    color: #1f2937;
+}
+  
+/* Sections */
+.dashboard-section-container {
+    margin: 20px;
+    padding: 25px;
+    background: white;
+    border-radius: 10px;
+    padding: 25px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+  
+.dashboard-section-heading {
+    font-size: 20px;
+    margin-bottom: 20px;
+    color: #374151;
+    font-weight: 600;
+}
+  
+/* Stats */
+.dashboard-stats-container {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+  
+.dashboard-stat-card {
+    flex: 1 1 200px;
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    display: flex;
+    align-items: center;
+    transition: transform 0.2s ease;
+}
+
+.dashboard-stat-card:hover {
+    transform: translateY(-5px);
+}
+
+.stat-card-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 15px;
+}
+
+.stat-card-content h3 {
+    font-size: 16px;
+    margin-bottom: 5px;
+    color: #4b5563;
+    font-weight: 500;
+}
+  
+.stat-card-content p {
+    font-size: 24px;
+    font-weight: bold;
+    color: #111827;
+    margin: 0;
+}
+
+/* Stat card specific styles */
+.stat-card-users .stat-card-icon {
+    background-color: rgba(99, 102, 241, 0.1);
+}
+.stat-icon-users {
+    color: #6366f1;
+    font-size: 20px;
+}
+
+.stat-card-orders .stat-card-icon {
+    background-color: rgba(16, 185, 129, 0.1);
+}
+.stat-icon-orders {
+    color: #10b981;
+    font-size: 20px;
+}
+
+.stat-card-payments .stat-card-icon {
+    background-color: rgba(245, 158, 11, 0.1);
+}
+.stat-icon-payments {
+    color: #f59e0b;
+    font-size: 20px;
+}
+
+.stat-card-tasks .stat-card-icon {
+    background-color: rgba(239, 68, 68, 0.1);
+}
+.stat-icon-tasks {
+    color: #ef4444;
+    font-size: 20px;
+}
+
+/* Transactions Table */
+.dashboard-transactions-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+  
+.dashboard-transactions-table th,
+.dashboard-transactions-table td {
+    padding: 15px 20px;
+    border-bottom: 1px solid #e5e7eb;
+    text-align: left;
+    font-size: 14px;
+    color: #374151;
+}
+  
+.dashboard-transactions-table th {
+    background-color: #f8fafc;
+    color: #64748b;
+    font-weight: 600;
+}
+
+.dashboard-transactions-table tr:last-child td {
+    border-bottom: none;
+}
+
+.transaction-status {
+    font-weight: bold;
+    text-transform: capitalize;
+}
+  
+.transaction-status-completed {
+    color: #10b981;
+}
+  
+.transaction-status-pending {
+    color: #f59e0b;
+}
+
+.refresh-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: #007bff;
+    color: white;
+    padding: 10px 18px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    box-shadow: 0 2px 6px rgba(0, 123, 255, 0.3);
+  }
+  
+  .refresh-button:hover:not(:disabled) {
+    background-color: #0056b3;
+  }
+  
+  .refresh-button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+  
+ 
+  
+
+  
