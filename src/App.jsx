@@ -2,11 +2,11 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import AnAdminSidebar from "./components/an_admin_sidebar";
 import Dashboard from "./pages/Dashboard";
 import Users from "./pages/users";
-import Settings from "./pages/Settings";
+import Settings from "./pages/settings";
 import Products from "./pages/Products";
 import Orders from "./pages/Orders";
 import Payments from "./pages/payments";
-import Notifications from "./pages/notifications";
+import Notifications from "./pages/Notifications";
 import AdminLogin from "./pages/AdminLogin";
 import Report from "./pages/Report";
 
