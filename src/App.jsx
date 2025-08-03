@@ -5,7 +5,7 @@ import Users from "./pages/users";
 import Settings from "./pages/settings";
 import Products from "./pages/Products";
 import Orders from "./pages/Orders";
-import Payments from "./pages/payments";
+import Payments from "./pages/Payments";
 import Notifications from "./pages/Notifications";
 import AdminLogin from "./pages/AdminLogin";
 import Report from "./pages/Report";
