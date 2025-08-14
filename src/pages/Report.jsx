@@ -20,7 +20,7 @@ import {
 } from "recharts";
 import "react-date-range/dist/styles.css";
 import "react-date-range/dist/theme/default.css";
-import "../styles/ReportV3.css";
+import "../styles/Report.css";
 
 const baseURL = import.meta.env.VITE_API_BASE_URL;
 
