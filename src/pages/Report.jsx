@@ -2,28 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import {
   FaFileAlt,
-  FaChartLine,
-  FaChartBar,
-  FaChartPie,
   FaCalendarAlt,
   FaDownload,
   FaFilter,
   FaUsers,
-  FaShoppingCart
+  FaShoppingCart,
+  FaBox,
+  FaMoneyBillWave
 } from 'react-icons/fa';
 import { DateRangePicker } from 'react-date-range';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell
-} from 'recharts';
 import Swal from 'sweetalert2';
 import { jsPDF } from 'jspdf';
 import 'react-date-range/dist/styles.css';
@@ -35,7 +22,13 @@ const baseURL = import.meta.env.VITE_API_BASE_URL;
 const Report = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [reportData, setReportData] = useState(null);
+  const [reportData, setReportData] = useState({
+    users: [],
+    products: [],
+    orders: [],
+    payments: [],
+    stats: {}
+  });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [dateRange, setDateRange] = useState([
     {
@@ -52,15 +45,36 @@ const Report = () => {
       const token = localStorage.getItem('token');
       const { startDate, endDate } = dateRange[0];
 
-      const response = await axios.get(`${baseURL}/admin/report`, {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
-          startDate: startDate.toISOString().split('T')[0],
-          endDate: endDate.toISOString().split('T')[0]
-        }
-      });
+      // Fetch all data in parallel
+      const [usersRes, productsRes, ordersRes, paymentsRes, statsRes] = await Promise.all([
+        axios.get(`${baseURL}/admin/users`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get(`${baseURL}/api/products/all`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get(`${baseURL}/api/tasks/all`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get(`${baseURL}/api/payment/admin-all`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get(`${baseURL}/admin/report`, {
+          headers: { Authorization: `Bearer ${token}` },
+          params: {
+            startDate: startDate.toISOString().split('T')[0],
+            endDate: endDate.toISOString().split('T')[0]
+          }
+        })
+      ]);
 
-      setReportData(response.data);
+      setReportData({
+        users: usersRes.data.users || [],
+        products: productsRes.data.data || [],
+        orders: ordersRes.data.data || [],
+        payments: paymentsRes.data.transactions || [],
+        stats: statsRes.data || {}
+      });
       setError('');
     } catch (err) {
       console.error('Failed to fetch report data:', err);
@@ -75,7 +89,11 @@ const Report = () => {
   }, [dateRange]);
 
   const formatDate = (date) => {
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    return new Date(date).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
   };
 
   const formatCurrency = (amount) => {
@@ -88,7 +106,7 @@ const Report = () => {
   const generatePDF = async () => {
     const { value: confirm } = await Swal.fire({
       title: 'Generate Full Report',
-      text: 'This will generate a professional PDF report with all data and charts.',
+      text: 'This will generate a comprehensive PDF report with all data tables.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonColor: '#4c51bf',
@@ -101,82 +119,45 @@ const Report = () => {
     try {
       Swal.fire({
         title: 'Preparing Report...',
-        html: 'Please wait while we generate your professional report.',
+        html: 'Please wait while we generate your comprehensive report.',
         allowOutsideClick: false,
         didOpen: () => {
           Swal.showLoading();
         }
       });
 
-      // Dynamically import html2canvas
+      const { jsPDF } = await import('jspdf');
       const html2canvas = (await import('html2canvas')).default;
       
-      // Capture the entire report content
-      const canvas = await html2canvas(reportRef.current, {
+      const pdf = new jsPDF('p', 'pt', 'a4');
+      const element = reportRef.current;
+      const canvas = await html2canvas(element, {
         scale: 2,
         logging: false,
         useCORS: true,
         scrollY: -window.scrollY
       });
 
-      // Create PDF
-      const pdf = new jsPDF('p', 'mm', 'a4');
       const imgData = canvas.toDataURL('image/png');
       const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
-      // Add cover page with title and icon
-      pdf.setFillColor(245, 245, 245);
-      pdf.rect(0, 0, pdfWidth, pdfHeight, 'F');
-      
-      // Add icon
-      pdf.setFontSize(40);
-      pdf.setTextColor(76, 81, 191);
-      pdf.text('📊', pdfWidth / 2, 60, { align: 'center' });
-      
-      // Add title
-      pdf.setFontSize(24);
-      pdf.setTextColor(0, 0, 0);
-      pdf.text('Analytics Report', pdfWidth / 2, 80, { align: 'center' });
-      
-      // Add date range
-      pdf.setFontSize(14);
-      pdf.setTextColor(100, 100, 100);
-      const dateRangeText = `${formatDate(dateRange[0].startDate)} - ${formatDate(dateRange[0].endDate)}`;
-      pdf.text(dateRangeText, pdfWidth / 2, 90, { align: 'center' });
-      
-      // Add generated date
-      pdf.setFontSize(10);
-      pdf.text(`Generated on: ${new Date().toLocaleDateString()}`, pdfWidth / 2, 100, { align: 'center' });
-      
-      // Add new page with content
-      pdf.addPage();
+      // Add cover page
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-
-      // Add footer
-      const pageCount = pdf.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        pdf.setPage(i);
-        pdf.setFontSize(8);
-        pdf.setTextColor(150, 150, 150);
-        pdf.text(`Page ${i} of ${pageCount}`, pdfWidth - 20, pdf.internal.pageSize.getHeight() - 10);
-      }
 
       // Add metadata
       pdf.setProperties({
-        title: `Analytics Report - ${dateRangeText}`,
-        subject: 'Comprehensive analytics report',
-        author: 'Admin Dashboard',
-        creator: 'Analytics Dashboard'
+        title: `Comprehensive Report - ${formatDate(dateRange[0].startDate)} to ${formatDate(dateRange[0].endDate)}`,
+        subject: 'System Data Report',
+        author: 'Admin Dashboard'
       });
 
-      // Save PDF
-      pdf.save(`analytics_report_${new Date().toISOString().slice(0, 10)}.pdf`);
+      pdf.save(`system_report_${new Date().toISOString().slice(0, 10)}.pdf`);
 
       Swal.fire(
         'Report Generated!',
-        'Your professional report has been downloaded.',
+        'Your comprehensive report has been downloaded.',
         'success'
       );
     } catch (err) {
@@ -189,117 +170,177 @@ const Report = () => {
     }
   };
 
-  const renderSummaryTab = () => {
-    const revenueData = [
-      { name: 'Previous', value: reportData?.totalRevenue * (1 - (reportData?.revenueChange || 0) / 100) },
-      { name: 'Current', value: reportData?.totalRevenue }
-    ];
+  const renderUserTable = () => (
+    <div className="report-table-section">
+      <h3 className="table-title">
+        <FaUsers className="table-icon" /> Users Report
+      </h3>
+      <table className="report-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {reportData.users.map((user, index) => (
+            <tr key={user._id}>
+              <td>{index + 1}</td>
+              <td>{user.name}</td>
+              <td>{user.email}</td>
+              <td>{user.role}</td>
+              <td>
+                <span className={`status-badge ${user.status?.toLowerCase() || 'active'}`}>
+                  {user.status || 'Active'}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 
-    const orderUserData = [
-      { name: 'Orders', value: reportData?.totalOrders || 0 },
-      { name: 'New Users', value: reportData?.newUsers || 0 }
-    ];
+  const renderProductTable = () => (
+    <div className="report-table-section">
+      <h3 className="table-title">
+        <FaBox className="table-icon" /> Products Inventory
+      </h3>
+      <table className="report-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Image</th>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          {reportData.products.map((product, index) => (
+            <tr key={product._id}>
+              <td>{index + 1}</td>
+              <td>
+                <img 
+                  src={product.image} 
+                  alt={product.name} 
+                  className="product-thumbnail"
+                />
+              </td>
+              <td>{product.name}</td>
+              <td className="truncate">{product.description || '—'}</td>
+              <td>{formatCurrency(product.price)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 
-    const pieColors = ['#6366f1', '#10b981'];
+  const renderOrderTable = () => (
+    <div className="report-table-section">
+      <h3 className="table-title">
+        <FaShoppingCart className="table-icon" /> Orders & Deliveries
+      </h3>
+      <table className="report-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Product</th>
+            <th>Address</th>
+            <th>Status</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {reportData.orders.map((order, index) => (
+            <tr key={order._id}>
+              <td>{index + 1}</td>
+              <td>{order.product}</td>
+              <td>{order.address}</td>
+              <td>
+                <span className={`status-badge ${order.status.toLowerCase()}`}>
+                  {order.status}
+                </span>
+              </td>
+              <td>{formatDate(order.createdAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 
-    return (
-      <div className="report-summary" ref={reportRef}>
-        <div className="report-header-section">
-          <h2>Analytics Dashboard</h2>
-          <p className="date-range-display">
-            {formatDate(dateRange[0].startDate)} - {formatDate(dateRange[0].endDate)}
-          </p>
-        </div>
+  const renderPaymentTable = () => (
+    <div className="report-table-section">
+      <h3 className="table-title">
+        <FaMoneyBillWave className="table-icon" /> Payment Records
+      </h3>
+      <table className="report-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>User</th>
+            <th>Invoice ID</th>
+            <th>Product</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {reportData.payments.map((payment, index) => (
+            <tr key={payment._id}>
+              <td>{index + 1}</td>
+              <td>
+                {payment.userId?.name || 'Unknown'}
+                <div className="subtext">{payment.userId?.email}</div>
+              </td>
+              <td>{payment.invoiceId}</td>
+              <td>{payment.productTitle}</td>
+              <td>{formatCurrency(payment.amount)}</td>
+              <td>
+                <span className={`status-badge ${payment.status}`}>
+                  {payment.status}
+                </span>
+              </td>
+              <td>{formatDate(payment.createdAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 
-        <div className="report-highlights">
-          <div className="highlight-card">
-            <div className="highlight-icon revenue">
-              <FaChartLine />
-            </div>
-            <div className="highlight-content">
-              <h3>Total Revenue</h3>
-              <p>{formatCurrency(reportData?.totalRevenue || 0)}</p>
-              <span className={`highlight-change ${reportData?.revenueChange >= 0 ? 'positive' : 'negative'}`}>
-                {reportData?.revenueChange >= 0 ? '↑' : '↓'}
-                {Math.abs(reportData?.revenueChange || 0)}% from last period
-              </span>
-            </div>
-          </div>
-
-          <div className="highlight-card">
-            <div className="highlight-icon orders">
-              <FaShoppingCart />
-            </div>
-            <div className="highlight-content">
-              <h3>Total Orders</h3>
-              <p>{reportData?.totalOrders || 0}</p>
-              <span className={`highlight-change ${reportData?.orderChange >= 0 ? 'positive' : 'negative'}`}>
-                {reportData?.orderChange >= 0 ? '↑' : '↓'}
-                {Math.abs(reportData?.orderChange || 0)}% from last period
-              </span>
-            </div>
-          </div>
-
-          <div className="highlight-card">
-            <div className="highlight-icon users">
-              <FaUsers />
-            </div>
-            <div className="highlight-content">
-              <h3>New Users</h3>
-              <p>{reportData?.newUsers || 0}</p>
-              <span className={`highlight-change ${reportData?.userChange >= 0 ? 'positive' : 'negative'}`}>
-                {reportData?.userChange >= 0 ? '↑' : '↓'}
-                {Math.abs(reportData?.userChange || 0)}% from last period
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="report-charts">
-          <div className="chart-container">
-            <h3>Revenue Comparison</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={revenueData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip formatter={(value) => formatCurrency(value)} />
-                <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="chart-container">
-            <h3>Order vs New Users</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={orderUserData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={100}
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                >
-                  {orderUserData.map((_, index) => (
-                    <Cell key={index} fill={pieColors[index % pieColors.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => value} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+  const renderStatsSummary = () => (
+    <div className="stats-summary">
+      <div className="stat-card">
+        <h4>Total Users</h4>
+        <p>{reportData.users.length}</p>
       </div>
-    );
-  };
+      <div className="stat-card">
+        <h4>Total Products</h4>
+        <p>{reportData.products.length}</p>
+      </div>
+      <div className="stat-card">
+        <h4>Total Orders</h4>
+        <p>{reportData.orders.length}</p>
+      </div>
+      <div className="stat-card">
+        <h4>Total Revenue</h4>
+        <p>{formatCurrency(reportData.stats.totalRevenue || 0)}</p>
+      </div>
+    </div>
+  );
 
   return (
     <div className="report-container">
       <div className="report-header">
         <h1 className="report-title">
-          <FaFileAlt className="title-icon" /> Analytics Report
+          <FaFileAlt className="title-icon" /> System Report
         </h1>
 
         <div className="report-controls">
@@ -312,7 +353,7 @@ const Report = () => {
           </button>
 
           <button onClick={generatePDF} className="export-button">
-            <FaDownload /> Generate Full Report
+            <FaDownload /> Export Full Report
           </button>
         </div>
       </div>
@@ -334,7 +375,7 @@ const Report = () => {
               fetchReportData();
             }}
           >
-            Apply
+            Apply Date Range
           </button>
         </div>
       )}
@@ -350,7 +391,20 @@ const Report = () => {
           <button onClick={fetchReportData}>Retry</button>
         </div>
       ) : (
-        renderSummaryTab()
+        <div className="report-content" ref={reportRef}>
+          <div className="report-header-section">
+            <h2>System Comprehensive Report</h2>
+            <p className="date-range-display">
+              {formatDate(dateRange[0].startDate)} - {formatDate(dateRange[0].endDate)}
+            </p>
+          </div>
+
+          {renderStatsSummary()}
+          {renderUserTable()}
+          {renderProductTable()}
+          {renderOrderTable()}
+          {renderPaymentTable()}
+        </div>
       )}
     </div>
   );
