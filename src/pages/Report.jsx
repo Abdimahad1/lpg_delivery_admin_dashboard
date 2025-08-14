@@ -1,79 +1,98 @@
-import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import axios from "axios";
+import { DateRangePicker } from "react-date-range";
+import { jsPDF } from "jspdf";
+import Swal from "sweetalert2";
 import {
-  FaFileAlt,
   FaCalendarAlt,
   FaDownload,
   FaFilter,
-  FaUsers
-} from 'react-icons/fa';
-import { DateRangePicker } from 'react-date-range';
-import Swal from 'sweetalert2';
-import { jsPDF } from 'jspdf';
-import 'react-date-range/dist/styles.css';
-import 'react-date-range/dist/theme/default.css';
-import '../styles/Report.css';
+  FaFileAlt,
+  FaUsers,
+  FaUserTie,
+  FaTruck,
+  FaCashRegister,
+  FaShoppingBag,
+} from "react-icons/fa";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell
+} from "recharts";
+import "react-date-range/dist/styles.css";
+import "react-date-range/dist/theme/default.css";
+import "../styles/ReportV3.css";
 
 const baseURL = import.meta.env.VITE_API_BASE_URL;
 
-const Report = () => {
+export default function Report() {
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [errMsg, setErrMsg] = useState('');
-  const [summary, setSummary] = useState(null);
+  const [errMsg, setErrMsg] = useState("");
 
+  const [summary, setSummary] = useState(null);
   const [users, setUsers] = useState([]);
   const [payments, setPayments] = useState([]);
   const [orders, setOrders] = useState([]);
 
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [dateRange, setDateRange] = useState([
     {
       startDate: new Date(new Date().setMonth(new Date().getMonth() - 1)),
       endDate: new Date(),
-      key: 'selection'
-    }
+      key: "selection",
+    },
   ]);
 
-  const reportRef = useRef(null);
+  // This invisible container holds ONLY the tables we want in the PDF
+  const pdfRootRef = useRef(null);
 
   const headers = () => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem("token");
     return { Authorization: `Bearer ${token}` };
   };
 
+  const prettyDateOnly = (d) =>
+    d
+      ? new Date(d).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+      : "—";
+
+  const prettyDateTime = (d) => (d ? new Date(d).toLocaleString() : "—");
+
+  const money = (n) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
+
+  // Fetch data
   const fetchAll = async () => {
     try {
       setLoading(true);
-      setErrMsg('');
+      setErrMsg("");
       const { startDate, endDate } = dateRange[0];
 
       const params = {
-        startDate: startDate.toISOString().split('T')[0],
-        endDate: endDate.toISOString().split('T')[0]
+        startDate: startDate.toISOString().split("T")[0],
+        endDate: endDate.toISOString().split("T")[0],
       };
 
-      // Endpoints based on your other pages
       const urls = {
         report: `${baseURL}/admin/report`,
         users: `${baseURL}/admin/users`,
         orders: `${baseURL}/tasks/all`,
-        payments: `${baseURL}/payment/admin-all`
+        payments: `${baseURL}/payment/admin-all`,
       };
 
       const [repRes, usrRes, ordRes, payRes] = await Promise.all([
         axios.get(urls.report, { headers: headers(), params }),
         axios.get(urls.users, { headers: headers() }),
         axios.get(urls.orders, { headers: headers() }),
-        axios.get(urls.payments, { headers: headers() })
+        axios.get(urls.payments, { headers: headers() }),
       ]);
 
       setSummary(repRes.data || null);
       setUsers(usrRes.data?.users || []);
       setOrders(ordRes.data?.data || []);
       setPayments(payRes.data?.transactions || []);
-    } catch (err) {
-      console.error('Report fetch error:', err);
-      setErrMsg(err.response?.data?.message || 'Failed to load report data');
+    } catch (e) {
+      console.error("report fetch error", e);
+      setErrMsg(e?.response?.data?.message || "Failed to load report data.");
     } finally {
       setLoading(false);
     }
@@ -84,361 +103,433 @@ const Report = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateRange]);
 
-  const formatMoney = (n) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
+  // Derived splits
+  const customers = useMemo(() => users.filter((u) => u.role === "Customer"), [users]);
+  const vendors = useMemo(() => users.filter((u) => u.role === "Vendor"), [users]);
+  const deliveryPersons = useMemo(
+    () => users.filter((u) => u.role === "DeliveryPerson"),
+    [users]
+  );
 
-  const prettyDate = (d) =>
-    d ? new Date(d).toLocaleString() : '—';
+  // Customers & their purchases derived from payments (has product + customer)
+  const customerOrders = useMemo(
+    () =>
+      payments
+        .filter((p) => !!p.userId)
+        .map((p) => ({
+          id: p._id,
+          customerName: p.userId?.name || p.userId?.email || "Unknown",
+          customerEmail: p.userId?.email || "—",
+          product: p.productTitle || p.product?.title || "—",
+          amount: p.amount,
+          status: p.status,
+          date: p.createdAt,
+        })),
+    [payments]
+  );
 
-  const prettyDateOnly = (d) =>
-    d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+  // UI charts (fake trend built from totals for a visual only)
+  const revenueTrend = useMemo(() => {
+    const total = Number(summary?.totalRevenue || 0);
+    const change = Number(summary?.revenueChange || 0);
+    const prev = Math.max(0, total / (1 + change / 100));
+    return [
+      { name: "Prev", value: prev * 0.6 },
+      { name: "Prev+", value: prev * 0.8 },
+      { name: "Now", value: total * 0.9 },
+      { name: "Now+", value: total },
+    ];
+  }, [summary]);
 
-  // Derived data
-  const customers = users.filter(u => u.role === 'Customer');
-  const vendors = users.filter(u => u.role === 'Vendor');
-  const deliveryPersons = users.filter(u => u.role === 'DeliveryPerson');
+  const pieData = useMemo(() => {
+    return [
+      { name: "Orders", value: Number(summary?.totalOrders || 0) },
+      { name: "New Users", value: Number(summary?.newUsers || 0) },
+    ];
+  }, [summary]);
 
-  // Customers & their orders (from Payments, since it has product/user info)
-  const customerOrders = payments
-    .filter(p => !!p.userId) // keep those with a user
-    .map(p => ({
-      id: p._id,
-      customerName: p.userId?.name || p.userId?.email || 'Unknown',
-      customerEmail: p.userId?.email || '—',
-      product: p.productTitle || p.product?.title || '—',
-      amount: p.amount,
-      status: p.status,
-      date: p.createdAt
-    }));
+  const pieColors = ["#6366f1", "#10b981"];
 
+  // PDF generation
   const generatePDF = async () => {
-    const { value: confirm } = await Swal.fire({
-      title: 'Generate Report (Tables Only)',
-      text: 'A PDF with all tables will be created.',
-      icon: 'question',
+    const { value: ok } = await Swal.fire({
+      title: "Download Report",
+      text: "The PDF will include detailed tables only.",
+      icon: "question",
       showCancelButton: true,
-      confirmButtonColor: '#4c51bf',
-      cancelButtonColor: '#e53e3e',
-      confirmButtonText: 'Generate'
+      confirmButtonColor: "#111827",
+      cancelButtonColor: "#6b7280",
+      confirmButtonText: "Download",
     });
-    if (!confirm) return;
+    if (!ok) return;
 
     try {
       Swal.fire({
-        title: 'Preparing PDF...',
-        html: 'Rendering tables for export.',
+        title: "Preparing…",
+        html: "Composing your report.",
         allowOutsideClick: false,
-        didOpen: () => Swal.showLoading()
+        didOpen: () => Swal.showLoading(),
       });
 
-      const html2canvas = (await import('html2canvas')).default;
+      // Make sure the PDF root is visible for capture (it’s positioned off-screen but displayed)
+      const pdfNode = pdfRootRef.current;
+      const html2canvas = (await import("html2canvas")).default;
 
-      // Snapshot the content
-      const canvas = await html2canvas(reportRef.current, {
+      const canvas = await html2canvas(pdfNode, {
         scale: 2,
         useCORS: true,
         scrollY: -window.scrollY,
+        windowWidth: document.documentElement.scrollWidth,
       });
-      const imgData = canvas.toDataURL('image/png');
 
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const img = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
       const pdfW = pdf.internal.pageSize.getWidth();
       const pdfH = pdf.internal.pageSize.getHeight();
 
-      // Cover page
-      pdf.setFillColor(245, 245, 245);
-      pdf.rect(0, 0, pdfW, pdfH, 'F');
-      pdf.setFontSize(26); pdf.setTextColor(35, 38, 47);
-      pdf.text('Operations Report', pdfW / 2, 50, { align: 'center' });
+      // PAGE 1: COVER (avoid empty first page by drawing directly on the default page)
+      pdf.setFillColor(248, 250, 252);
+      pdf.rect(0, 0, pdfW, pdfH, "F");
+      pdf.setTextColor(17, 24, 39);
+      pdf.setFontSize(22);
+      pdf.text("Operations Report", pdfW / 2, 50, { align: "center" });
 
-      pdf.setFontSize(12); pdf.setTextColor(90, 90, 90);
-      const dr = `${prettyDateOnly(dateRange[0].startDate)} – ${prettyDateOnly(dateRange[0].endDate)}`;
-      pdf.text(`Date Range: ${dr}`, pdfW / 2, 65, { align: 'center' });
-      pdf.text(`Generated: ${prettyDateOnly(new Date())}`, pdfW / 2, 73, { align: 'center' });
+      const dr = `${prettyDateOnly(dateRange[0].startDate)} – ${prettyDateOnly(
+        dateRange[0].endDate
+      )}`;
+      pdf.setFontSize(12);
+      pdf.setTextColor(75, 85, 99);
+      pdf.text(`Date Range: ${dr}`, pdfW / 2, 63, { align: "center" });
+      pdf.text(
+        `Generated: ${prettyDateOnly(new Date())}`,
+        pdfW / 2,
+        71,
+        { align: "center" }
+      );
 
-      // Add tables across multiple pages
-      pdf.addPage();
-      const imgProps = pdf.getImageProperties(imgData);
+      // Subsequent pages: slice the tall tables image across pages
+      const props = pdf.getImageProperties(img);
       const imgW = pdfW;
-      const imgH = (imgProps.height * imgW) / imgProps.width;
+      const imgH = (props.height * imgW) / props.width;
 
-      let heightLeft = imgH;
-      let position = 0;
-
-      pdf.addImage(imgData, 'PNG', 0, position, imgW, imgH);
-      heightLeft -= pdfH;
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgH;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgW, imgH);
-        heightLeft -= pdfH;
+      let yPos = 0;
+      let remaining = imgH;
+      // Start on a NEW page for content (cover already used)
+      pdf.addPage();
+      while (remaining > 0) {
+        const sliceHeight = Math.min(imgH - Math.abs(yPos), pdfH);
+        pdf.addImage(img, "PNG", 0, yPos, imgW, imgH);
+        remaining -= pdfH;
+        yPos -= pdfH;
+        if (remaining > 0) pdf.addPage();
       }
 
-      // Footer page numbers
-      const pageCount = pdf.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
+      // Footer page numbers (for all pages)
+      const count = pdf.getNumberOfPages();
+      for (let i = 1; i <= count; i++) {
         pdf.setPage(i);
         pdf.setFontSize(8);
-        pdf.setTextColor(150, 150, 150);
-        pdf.text(`Page ${i} of ${pageCount}`, pdfW - 20, pdfH - 8);
+        pdf.setTextColor(107, 114, 128);
+        pdf.text(`Page ${i} of ${count}`, pdfW - 20, pdfH - 8);
       }
 
       pdf.setProperties({
         title: `Operations Report - ${dr}`,
-        subject: 'Admin dashboard tables',
-        author: 'Admin Dashboard',
-        creator: 'Admin Dashboard'
+        subject: "Tables export",
+        author: "Admin Dashboard",
+        creator: "Admin Dashboard",
       });
 
-      pdf.save(`operations_report_${new Date().toISOString().slice(0,10)}.pdf`);
+      pdf.save(`operations_report_${new Date().toISOString().slice(0, 10)}.pdf`);
       Swal.close();
-      Swal.fire('Done!', 'Report downloaded.', 'success');
+      Swal.fire("Done!", "PDF downloaded.", "success");
     } catch (e) {
-      console.error('PDF generation error:', e);
-      Swal.fire('Error', 'Could not generate PDF. Try again.', 'error');
+      console.error("pdf error", e);
+      Swal.fire("Error", "Could not export. Try again.", "error");
     }
   };
 
   return (
-    <div className="report-container">
-      <div className="report-header">
-        <h1 className="report-title">
-          <FaFileAlt className="title-icon" /> Operations Report
+    <div className="rp3-container">
+      {/* Header */}
+      <header className="rp3-header">
+        <h1 className="rp3-title">
+          <FaFileAlt /> Analytics Overview
         </h1>
-
-        <div className="report-controls">
+        <div className="rp3-actions">
           <button
-            className="date-filter-button"
-            onClick={() => setShowDatePicker(!showDatePicker)}
+            className="rp3-btn rp3-btn-light"
+            onClick={() => setShowDatePicker((s) => !s)}
           >
             <FaCalendarAlt />
-            {`${prettyDateOnly(dateRange[0].startDate)} - ${prettyDateOnly(dateRange[0].endDate)}`}
-            <FaFilter className="filter-icon" />
+            {prettyDateOnly(dateRange[0].startDate)} – {prettyDateOnly(dateRange[0].endDate)}
+            <FaFilter className="rp3-btn-tail" />
           </button>
 
-          <button onClick={generatePDF} className="export-button">
-            <FaDownload /> Download PDF
+          <button className="rp3-btn rp3-btn-dark" onClick={generatePDF}>
+            <FaDownload /> Download Report
           </button>
         </div>
-      </div>
+      </header>
 
+      {/* Date range picker */}
       {showDatePicker && (
-        <div className="date-range-picker-container">
+        <div className="rp3-daterange">
           <DateRangePicker
-            onChange={item => setDateRange([item.selection])}
-            showSelectionPreview={true}
+            onChange={(item) => setDateRange([item.selection])}
+            showSelectionPreview
             moveRangeOnFirstSelection={false}
             months={2}
             ranges={dateRange}
             direction="horizontal"
           />
-          <button
-            className="apply-date-button"
-            onClick={() => {
-              setShowDatePicker(false);
-              fetchAll();
-            }}
-          >
-            Apply
-          </button>
+          <div className="rp3-daterange-foot">
+            <button
+              className="rp3-btn rp3-btn-dark"
+              onClick={() => {
+                setShowDatePicker(false);
+                fetchAll();
+              }}
+            >
+              Apply
+            </button>
+          </div>
         </div>
       )}
 
+      {/* Loading / Error */}
       {loading ? (
-        <div className="report-loading">
-          <div className="loading-spinner"></div>
-          <p>Loading tables…</p>
+        <div className="rp3-loading">
+          <div className="rp3-spinner" />
+          <p>Loading your overview…</p>
         </div>
       ) : errMsg ? (
-        <div className="report-error">
+        <div className="rp3-error">
           <p>{errMsg}</p>
-          <button onClick={fetchAll}>Retry</button>
+          <button className="rp3-btn rp3-btn-dark" onClick={fetchAll}>
+            Retry
+          </button>
         </div>
       ) : (
-        <div className="report-content" ref={reportRef}>
-          {/* Summary cards (no charts) */}
-          <div className="summary-cards">
-            <div className="summary-card">
-              <div className="sc-top">
-                <span className="sc-title">Total Revenue</span>
-                <span className={`sc-chip ${Number(summary?.revenueChange) >= 0 ? 'pos' : 'neg'}`}>
-                  {Number(summary?.revenueChange) >= 0 ? '↑' : '↓'}
-                  {Math.abs(Number(summary?.revenueChange) || 0)}%
-                </span>
-              </div>
-              <div className="sc-value">{formatMoney(summary?.totalRevenue || 0)}</div>
+        <>
+          {/* Summary Cards */}
+          <section className="rp3-cards">
+            <SumCard
+              color="violet"
+              title="Total Revenue"
+              value={money(summary?.totalRevenue || 0)}
+              chip={Number(summary?.revenueChange) || 0}
+              icon={<FaCashRegister />}
+            />
+            <SumCard
+              color="emerald"
+              title="Total Orders"
+              value={summary?.totalOrders ?? 0}
+              chip={Number(summary?.orderChange) || 0}
+              icon={<FaShoppingBag />}
+            />
+            <SumCard
+              color="indigo"
+              title="New Users"
+              value={summary?.newUsers ?? 0}
+              chip={Number(summary?.userChange) || 0}
+              icon={<FaUsers />}
+            />
+          </section>
+
+          {/* Small Charts (visual only) */}
+          <section className="rp3-charts">
+            <div className="rp3-chart-card">
+              <div className="rp3-chart-title">Revenue Pulse</div>
+              <ResponsiveContainer width="100%" height={260}>
+                <AreaChart data={revenueTrend}>
+                  <defs>
+                    <linearGradient id="gradRev" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#6366f1" stopOpacity={0.9} />
+                      <stop offset="100%" stopColor="#6366f1" stopOpacity={0.2} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip formatter={(v) => money(v)} />
+                  <Area type="monotone" dataKey="value" stroke="#6366f1" fill="url(#gradRev)" />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
 
-            <div className="summary-card">
-              <div className="sc-top">
-                <span className="sc-title">Total Orders</span>
-                <span className={`sc-chip ${Number(summary?.orderChange) >= 0 ? 'pos' : 'neg'}`}>
-                  {Number(summary?.orderChange) >= 0 ? '↑' : '↓'}
-                  {Math.abs(Number(summary?.orderChange) || 0)}%
-                </span>
-              </div>
-              <div className="sc-value">{summary?.totalOrders ?? 0}</div>
+            <div className="rp3-chart-card">
+              <div className="rp3-chart-title">Orders vs New Users</div>
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={90}
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                  >
+                    {pieData.map((_, i) => (
+                      <Cell key={i} fill={pieColors[i % pieColors.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
-
-            <div className="summary-card">
-              <div className="sc-top">
-                <span className="sc-title">New Users</span>
-                <span className={`sc-chip ${Number(summary?.userChange) >= 0 ? 'pos' : 'neg'}`}>
-                  {Number(summary?.userChange) >= 0 ? '↑' : '↓'}
-                  {Math.abs(Number(summary?.userChange) || 0)}%
-                </span>
-              </div>
-              <div className="sc-value">{summary?.newUsers ?? 0}</div>
-            </div>
-          </div>
-
-          {/* Users - All */}
-          <Section title={`All Users (${users.length})`} icon={<FaUsers />}>
-            <Table
-              columns={['#', 'Name', 'Email', 'Role', 'Status', 'Created']}
-              rows={users.map((u, i) => [
-                i + 1,
-                u.name || '—',
-                u.email || '—',
-                u.role || '—',
-                <span className={`badge ${((u.status||'Active').toLowerCase())}`}>
-                  {u.status || 'Active'}
-                </span>,
-                prettyDateOnly(u.createdAt)
-              ])}
-              emptyText="No users found."
-            />
-          </Section>
-
-          {/* Customers */}
-          <Section title={`Customers (${customers.length})`}>
-            <Table
-              columns={['#', 'Name', 'Email', 'Status', 'Joined']}
-              rows={customers.map((u, i) => [
-                i + 1,
-                u.name || '—',
-                u.email || '—',
-                <span className={`badge ${((u.status||'Active').toLowerCase())}`}>
-                  {u.status || 'Active'}
-                </span>,
-                prettyDateOnly(u.createdAt)
-              ])}
-              emptyText="No customers found."
-            />
-          </Section>
-
-          {/* Vendors */}
-          <Section title={`Vendors (${vendors.length})`}>
-            <Table
-              columns={['#', 'Name', 'Email', 'Status', 'Joined']}
-              rows={vendors.map((u, i) => [
-                i + 1,
-                u.name || '—',
-                u.email || '—',
-                <span className={`badge ${((u.status||'Active').toLowerCase())}`}>
-                  {u.status || 'Active'}
-                </span>,
-                prettyDateOnly(u.createdAt)
-              ])}
-              emptyText="No vendors found."
-            />
-          </Section>
-
-          {/* Delivery Persons */}
-          <Section title={`Delivery Persons (${deliveryPersons.length})`}>
-            <Table
-              columns={['#', 'Name', 'Email', 'Status', 'Joined']}
-              rows={deliveryPersons.map((u, i) => [
-                i + 1,
-                u.name || '—',
-                u.email || '—',
-                <span className={`badge ${((u.status||'Active').toLowerCase())}`}>
-                  {u.status || 'Active'}
-                </span>,
-                prettyDateOnly(u.createdAt)
-              ])}
-              emptyText="No delivery persons found."
-            />
-          </Section>
-
-          {/* Customers & Their Orders (from payments) */}
-          <Section title={`Customers & Purchases (${customerOrders.length})`}>
-            <Table
-              columns={['#', 'Customer', 'Email', 'Product', 'Amount', 'Status', 'Date']}
-              rows={customerOrders.map((o, i) => [
-                i + 1,
-                o.customerName,
-                o.customerEmail,
-                o.product,
-                formatMoney(o.amount),
-                <span className={`badge ${o.status}`}>
-                  {o.status}
-                </span>,
-                prettyDate(o.date)
-              ])}
-              emptyText="No purchases found."
-            />
-          </Section>
-
-          {/* Payments */}
-          <Section title={`Payments (${payments.length})`}>
-            <Table
-              columns={['#', 'User', 'Invoice ID', 'Product', 'Amount', 'Status', 'Date']}
-              rows={payments.map((p, i) => [
-                i + 1,
-                <>
-                  {p.userId?.name || 'Unknown'}
-                  <div className="muted">{p.userId?.email}</div>
-                </>,
-                p.invoiceId || '—',
-                p.productTitle || p.product?.title || '—',
-                formatMoney(p.amount),
-                <span className={`badge ${p.status}`}>{p.status}</span>,
-                prettyDate(p.createdAt)
-              ])}
-              emptyText="No payment records."
-            />
-          </Section>
-        </div>
+          </section>
+        </>
       )}
+
+      {/* Hidden-offscreen PDF content (TABLES ONLY) */}
+      <div className="rp3-pdf-root" ref={pdfRootRef} aria-hidden>
+        <PDFSection title={`All Users (${users.length})`} icon={<FaUsers />}>
+          <PDFTable
+            columns={["#", "Name", "Email", "Role", "Status", "Joined"]}
+            rows={users.map((u, i) => [
+              i + 1,
+              u.name || "—",
+              u.email || "—",
+              u.role || "—",
+              (u.status || "Active"),
+              prettyDateOnly(u.createdAt),
+            ])}
+          />
+        </PDFSection>
+
+        <PDFSection title={`Customers (${customers.length})`} icon={<FaUsers />}>
+          <PDFTable
+            columns={["#", "Name", "Email", "Status", "Joined"]}
+            rows={customers.map((u, i) => [
+              i + 1,
+              u.name || "—",
+              u.email || "—",
+              (u.status || "Active"),
+              prettyDateOnly(u.createdAt),
+            ])}
+          />
+        </PDFSection>
+
+        <PDFSection title={`Vendors (${vendors.length})`} icon={<FaUserTie />}>
+          <PDFTable
+            columns={["#", "Name", "Email", "Status", "Joined"]}
+            rows={vendors.map((u, i) => [
+              i + 1,
+              u.name || "—",
+              u.email || "—",
+              (u.status || "Active"),
+              prettyDateOnly(u.createdAt),
+            ])}
+          />
+        </PDFSection>
+
+        <PDFSection title={`Delivery Persons (${deliveryPersons.length})`} icon={<FaTruck />}>
+          <PDFTable
+            columns={["#", "Name", "Email", "Status", "Joined"]}
+            rows={deliveryPersons.map((u, i) => [
+              i + 1,
+              u.name || "—",
+              u.email || "—",
+              (u.status || "Active"),
+              prettyDateOnly(u.createdAt),
+            ])}
+          />
+        </PDFSection>
+
+        <PDFSection title={`Customers & Purchases (${customerOrders.length})`} icon={<FaShoppingBag />}>
+          <PDFTable
+            columns={["#", "Customer", "Email", "Product", "Amount", "Status", "Date"]}
+            rows={customerOrders.map((o, i) => [
+              i + 1,
+              o.customerName,
+              o.customerEmail,
+              o.product,
+              money(o.amount),
+              o.status,
+              prettyDateTime(o.date),
+            ])}
+          />
+        </PDFSection>
+
+        <PDFSection title={`Payments (${payments.length})`} icon={<FaCashRegister />}>
+          <PDFTable
+            columns={["#", "User", "Invoice ID", "Product", "Amount", "Status", "Date"]}
+            rows={payments.map((p, i) => [
+              i + 1,
+              `${p.userId?.name || "Unknown"} (${p.userId?.email || "—"})`,
+              p.invoiceId || "—",
+              p.productTitle || p.product?.title || "—",
+              money(p.amount),
+              p.status,
+              prettyDateTime(p.createdAt),
+            ])}
+          />
+        </PDFSection>
+      </div>
     </div>
   );
-};
+}
 
-const Section = ({ title, icon, children }) => (
-  <section className="section-card">
-    <div className="section-head">
-      <h3 className="section-title">
-        {icon ? <span className="section-icon">{icon}</span> : null}
-        {title}
-      </h3>
+/* ===== Smaller UI bits ===== */
+
+function SumCard({ color = "indigo", title, value, chip, icon }) {
+  return (
+    <div className={`rp3-card rp3-card-${color}`}>
+      <div className="rp3-card-icon">{icon}</div>
+      <div className="rp3-card-main">
+        <div className="rp3-card-title">{title}</div>
+        <div className="rp3-card-value">{value}</div>
+      </div>
+      <div className={`rp3-chip ${chip >= 0 ? "pos" : "neg"}`}>
+        {chip >= 0 ? "↑" : "↓"} {Math.abs(chip)}%
+      </div>
     </div>
-    {children}
-  </section>
-);
+  );
+}
 
-const Table = ({ columns, rows, emptyText }) => (
-  <div className="table-wrap">
-    <table className="nice-table">
-      <thead>
-        <tr>
-          {columns.map((c, idx) => <th key={idx}>{c}</th>)}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.length === 0 ? (
+function PDFSection({ title, icon, children }) {
+  return (
+    <section className="rp3-pdf-section">
+      <div className="rp3-pdf-head">
+        <div className="rp3-pdf-title">
+          <span className="rp3-pdf-ico">{icon}</span>
+          {title}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function PDFTable({ columns, rows }) {
+  return (
+    <div className="rp3-pdf-table-wrap">
+      <table className="rp3-pdf-table">
+        <thead>
           <tr>
-            <td colSpan={columns.length} className="empty-td">{emptyText}</td>
+            {columns.map((c, i) => (
+              <th key={i}>{c}</th>
+            ))}
           </tr>
-        ) : rows.map((r, i) => (
-          <tr key={i}>
-            {r.map((cell, j) => <td key={j}>{cell}</td>)}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
-
-export default Report;
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={columns.length} className="rp3-pdf-empty">No data</td>
+            </tr>
+          ) : (
+            rows.map((r, i) => (
+              <tr key={i}>
+                {r.map((cell, j) => (
+                  <td key={j}>{cell}</td>
+                ))}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
