@@ -11,7 +11,7 @@ export default function Products() {
     const fetchProducts = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await axios.get("http://localhost:5000/api/products/all", {
+        const res = await axios.get("https://lgb-delivery-backend.onrender.com/api", {
           headers: {
             Authorization: `Bearer ${token}`,
           },

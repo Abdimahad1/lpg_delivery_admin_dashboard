@@ -12,7 +12,7 @@ export default function Orders() {
     const fetchOrders = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await axios.get("http://localhost:5000/api/tasks/all", {
+        const res = await axios.get("https://lgb-delivery-backend.onrender.com/api/tasks/all", {
           headers: {
             Authorization: `Bearer ${token}`,
           },
